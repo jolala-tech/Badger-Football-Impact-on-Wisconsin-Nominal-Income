@@ -1,0 +1,343 @@
+---
+title: "Testing Influence of Badger Football Performance on Wisconsin's Income"
+output: html_document
+date: "2025-12-01"
+---
+Jordan LaScala
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, error = T, warning = T)
+library(tidyverse)
+library(magrittr)
+library(scales)
+library(knitr)
+```
+
+
+## Introduction ##
+Economic conditions and athletic performance both play influential roles in shaping the experiences of communities across Wisconsin. Annual percent change in real income reflects how individuals and households are financially progressing, while the Wisconsin Badgers’ football point differential serves as a measure of the team’s on-field success each season. Though these variables come from very different domains, examining them together can help us consider whether broader economic shifts coincide with changes in sports performance.
+
+In this project, I explore the relationship between Wisconsin’s annual real income percent change and Badger football point differential across a twenty-year period. The central question guiding the analysis is: "Does a better scoring differential by the Wisconsin Badgers Football team correspond with an increase in the percentage of per-capita personal income in Madison the next year?” This question matters because successful college sports programs are sometimes believed to influence economic growth. We chose to measure the percent increase in real income each year because real income (like nominal income), generally tends to increase over time in a healthy economy.
+
+
+
+## Background ##
+
+### Background Concepts ###
+
+To compare income across years in a meaningful way, economists distinguish between nominal and real income:
+
+- **Nominal income** is measured in current dollars and includes the effects of inflation.
+- **Real income** is adjusted for inflation using a price index such as the Consumer Price Index (CPI)
+
+Because inflation changes the value of money over time, using real income allows us to express all values in the same "base-year dollars". Our project uses a price index to convert nominal per-capita income into real income so that changes reflect real differences in purchasing power, not just rising prices.
+
+### Data Sources ###
+**Football Scoring Data**
+
+Seasonal scoring data for the Wisconsin Badgers football team are collected and published by the University of Wisconsin Athletics Department. These statistics are aggregated at the end of each season and reported publicly on the official Wisconsin Athletics website: https://uwbadgers.com/sports/football/opponent-history
+
+**Per-Capita Personal Income Data**
+
+Income data comes from the US Bureau of Economic Analysis (BEA), which compiles economic information from federal administrative records, tax documents, and population estimates. The BEA publishes annual per-capita personal income for US metropolitan statistical areas (MSAs). We accessed the Madison MSA income series through the Federal Reserve Bank of St. Louis FRED database, which distributes BEA data without modifications: https://fred.stlouisfed.org/series/MADI555PCPI?utm
+
+To compare income across years while adjusting for inflation, we needed to convert nominal income values using the average annual CPI of the midwest consumer. This data was published by the U.S. Bureau of Labor Statistics. The CPI is measured month by month and then averaged for the average annual CPI of the states of **Illinois, Indiana, Iowa, Michigan, Minnesota, Nebraska, North Dakota, Ohio, South Dakota,** and **Wisconsin**: https://data.bls.gov/timeseries/CUUR0200SA0?amp%253bdata_tool=XGtable&output_view=data&include_graphs=true
+
+### Variables ###
+
+**Year:** Represents two decades of football scores and economic income (2003-2022).
+
+**Scoring Differential (Season t):** This variable represents the average difference between total points scored and total points allowed by the Wisconsin Badgers per game in season t. Higher values indicate stronger overall team performance. 
+
+**Percentage Change in Per-Capita Personal Income (Year t + 1):** This represents the average income percent increase earned per person in the Madison MSA in the year following the football season. We focus on next-year income because our question asks whether team performance may precede economic changes.
+
+
+**Unusual or Important Data Considerations**
+
+- Madison per-capita income data from FRED currently end in 2023, which limits the most recent football seasons we can compare.
+- College football seasons span fall months, while income data are annual calendar-year aggregates; therefore, we align season t with income in calendar year t + 1 to match timing appropriately
+- Scoring differential does not capture all aspects of performance (e.g., rankings, bowl games, fan attendance), which may influence economic activity differently
+
+
+
+### Data Structure ###
+
+- **Rows:** Each row of the dataset represents one Wisconsin Badgers football season linked with the percent change per-capita income in Madison in the following year. For example, the scoring differential for the 2012 season is paired the percentage change in the average Madison per-capita income from January 1st of 2013 to January 1st of 2014. This structure directly supports our central question: whether team performance in year t precedes and potentially relates to economic conditions in year t + 1.
+
+- **Sample Size:** The sample size is the number of years, which is 20. From 2003-2022 we observed the average scoring differential per football game and compared that to the following year's percent change in per-capita income.
+
+
+### Data Cleaning and Processing ###
+
+Before analyzing the data, we did some basic cleaning and preparation in R to make the football and income datasets compatible.
+
+For the football data, we started with game-level totals for points scored and points allowed in each season. For every season, we stored these values in a small table (tibble) with the corresponding year. We then combined all seasons into one dataset and created a point differential for each game by subtracting points allowed from points scored. Finally, we summarized these values by year to obtain a single average scoring differential for each season. This gives us one performance measure per season that reflects how much the Badgers typically outscored their opponents.
+
+For the income data, we read in the Madison per-capita personal income series from the CSV file and extracted the calendar year from the original date variable. We kept only the Madison metropolitan area income measure and filtered the dataset to the years that overlap with our football data (2003–2022). To the real income we used a ratio-based adjustment that scales each year’s income to a common price level. Specifically, we used the CPI for Midwest Urban Consumers and applied the formula:
+
+$$\text{RealIncome}_t = \text{NominalIncome}_t \times \left(\frac{\text{CPI}_{base}}{\text{CPI}_t}\right)$$
+
+where $CPI_{base}$ is a chosen reference index, the CPI of the year 2023, which is 282.760. This approach allowed us to convert all income values into “constant dollars,” making them directly comparable over time. By standardizing income in this way, we ensured our percent-change calculations reflected true changes in purchasing power rather than inflation effects.
+
+To calculate the percent change we used the formula:
+$$
+\%\Delta_k = \frac{\text{RealIncome}_k - \text{RealIncome}_{k-1}}{\text{RealIncome}_{k-1}} \times 100
+$$
+Next, we shifted the $\%\Delta_t$ one year forward to understand whether team performance may precede economic changes.
+
+After these steps, we joined the cleaned football and income datasets by year so that each row contains a season’s scoring differential and the corresponding real per-capita personal income measure for that year. This combined dataset is what we use for our visualizations and statistical analysis.
+
+```{r,include=FALSE}
+#This part of the RMD file is analyzing the points and points given up of the badger football team from 2003 - 2023. 
+
+allscores <- read_csv("/Users/jordanlascala/Desktop/STAT340/STAT240/project/allscores.csv")
+
+differential <- allscores %>%
+  group_by(year) %>% 
+  summarize(fb.differential = mean(point.differential)) %>% print
+
+write.csv(allscores, file = "allscores.csv", row.names = FALSE)
+
+
+```
+
+```{r,include=FALSE}
+#This part of the RMD file is the nominal and real income of Madison homes from 2003 - 2023: https://fred.stlouisfed.org/series/MADI555PCPI?utm
+
+
+MADI555PCPI = read_csv("/Users/jordanlascala/Desktop/STAT340/STAT240/project/MADI555PCPI.csv") %>% rename(nIncome = MADI555PCPI) %>% print
+
+year = MADI555PCPI$observation_date <- as.numeric(format(MADI555PCPI$observation_date,"%Y")) %>% print
+
+madIncome = tibble(year, MADI555PCPI %>% select(nIncome)) %>% print
+
+#Here I am renaming the columns and simplifying the dates to the year
+
+
+#For this part, I simply wrote down by year the CPI
+
+#Consumer Price Index =  https://data.bls.gov/timeseries/CUUR0200SA0?amp%253bdata_tool=XGtable&output_view=data&include_graphs=true
+
+CPI = c(174.9,178.3, 182.6, 188.4,193.0, 198.123, 205.382,204.064,208.046,214.743,219.100,222.170,225.425,224.210,226.115,229.874,234.290,237.776,240.040,252.242,272.401,282.760)
+
+df = madIncome %>% 
+  filter(year >=2002 & year <= 2023) %>% 
+  mutate(nIncome.t1 = lead(nIncome,1)) %>% print
+
+
+baseIndex = 282.760 #Base index is the CPI from 2023
+
+
+df2 = tibble(df,CPI) %>% 
+  mutate(rIncome.t1 = nIncome.t1*(baseIndex/CPI)) %>% 
+  mutate(pChange.t1 = 100*(rIncome.t1 -lag(rIncome.t1))/lag(rIncome.t1)) %>% 
+  print 
+
+#Here I made another column showing percent change of income by year. I think this will be good to show also.
+
+#Final Data Frame:
+df3 = df2 %>% right_join(differential,join_by(year)) %>%
+  relocate(year,
+           fb.differential,
+           pChange.t1,
+           rIncome.t1,
+           nIncome,
+           nIncome.t1) %>% 
+  filter(year>=2003 & year <= 2022) %>% 
+  print
+
+
+```
+
+```{r,echo = FALSE,message = FALSE}
+#ggplots
+
+
+#Football Differential vs. Percentage Change
+ggplot(df3,aes(fb.differential,pChange.t1)) + 
+  geom_smooth(method = "lm",se=F, col = "red") +
+  geom_point(col = "blue3",size = 2) +
+  labs(
+    title = "Football Team Point Differential and Annual Income Change",
+    subtitle = "UW-Madison, 2003-2022",
+    caption = "STAT 240",
+    x = "Seasonal Scoring Differential",
+    y = "Annual Income Change (Percentage)"
+  ) +
+  theme_minimal() +
+  geom_hline(yintercept = 0, alpha = 0.5) +
+  geom_vline(xintercept = 0, alpha = 0.5) +
+  scale_y_continuous(labels = scales::percent_format(scale = 1))
+
+#Football Differential vs. Real Income
+ggplot(df3,aes(fb.differential,rIncome.t1)) + 
+  geom_point(col = "orange3",size = 2) +
+  geom_smooth(method = "lm", se = F) +
+  labs(
+    title = "Football Team Point Differential and Annual Per-Capita Income",
+    subtitle = "UW-Madison, 2003-2022",
+    caption = "STAT 240",
+    x = "Seasonal Scoring Differential",
+    y = "Per-Capita Income (in 1,000 USD)"
+  ) +
+  scale_y_continuous(labels = label_number(scale=1/10000)) +
+  theme_minimal() +
+  geom_hline(yintercept = 60000) +
+  geom_vline(xintercept = 0)
+  
+```
+
+Provided above are graphs showing the relationship between the seasonal scoring differential and real per-capita income, and the scoring differential and the percentage change in real per-capita income. As you can see in the graphs, there does not appear to be a correlation between real income and point differential, however there is a small positive correlation between the percentage of annual income change and point differential.
+
+
+## Statistical Analysis ##
+Economic conditions and college-football performance are distinct phenomena, but comparing them over time can reveal whether broad economic shifts coincide with changes in team success. In this study we examine whether annual percent change in Wisconsin real per-capita income is associated with the Wisconsin Badgers’ annual football point differential. 
+
+### Parameter of Interest ###
+
+The main parameter of interest is the slope coefficient $\beta_1$, which tells us how percent income change is expected to change for a one-unit increase in scoring differential. Other parameters of the model include the y-intercept $\beta_0$, and the error variance $\sigma^2$.
+
+
+### Type of Inference ###
+
+Our main inferential tool is a simple linear regression of the form:
+$$
+Y_i = \beta_0 + \beta_1 X_i + \varepsilon_i
+$$
+
+### Assumptions ###
+- The relationship between $X$ (The scoring differential) and $Y$ is linear, as opposed to a curved/non-linear relationship.
+- The errors are normally distributed around 0.
+- The errors have constant variance / standard deviation which does not change with $X$.
+- Each year's data is independent from other years.
+
+
+### Hypothesis ###
+The hypotheses for this analysis are:
+
+$$
+H_0: \beta_1 = 0 \quad \text{(no relationship between scoring differential and percent income change)}
+$$
+
+$$
+H_a: \beta_1 \neq 0 \quad \text{(a relationship exists between scoring differential and percent income change)}
+$$
+
+### Test Statistic and Null Distribution ###
+
+The test statistic for linear regression is calculated as:
+
+$$
+T = \frac{\hat{\beta}_1 - \beta_{1,null}}{\text{SE}(\hat{\beta}_1)}
+$$
+Where
+
+- $\hat{\beta}_1$ = the estimated slope from our regression
+- $\beta_{1,null}$ = null value of the slope (0)
+- $\text{SE}(\hat{\beta}_1)$ = standard error of the estimated slope
+
+This $T$-statistic follows a t-distribution with $n$-2 degrees of freedom under the null hypothesis.
+
+The degrees of freedom ($df$) are calculated with $n$ - 2
+
+### Results ###
+
+- **p-value:** 0.1395
+- **Correlation coefficient:** 0.3423556
+- **Test Statistic (T):** 1.546215 
+- **Confidence interval:** (-0.06068, 0.39899)
+
+```{r,include=FALSE}
+#Correlation Coefficient
+x = df3$fb.differential
+y = df3$pChange.t1
+r = cor(x,y)
+r
+model=lm(y~x)
+
+#beta1
+beta_hat_1 = r* sd(y) /sd(x)
+beta_hat_1
+estimates = coef(model)
+beta_hat_0 = estimates[1]
+beta_hat_1 = estimates[2]
+c(beta_hat_0,beta_hat_1)
+
+#Point Estimate = beta_ha_1
+
+#Standard Error 
+summary(model)
+se =  0.1094
+
+#95% confidence Interval
+C = 0.95
+
+moe = qt(C +(1-C)/2,df = 20-2)*se
+
+left = beta_hat_1 - moe
+right = beta_hat_1 + moe
+
+c(left,right)
+
+#Test Stat
+pe = beta_hat_1
+test_stat = (pe-0)/se
+test_stat
+```
+- **Linear Regression model:**
+
+$${IncomePercentChange}_{t+1} = -0.5937 + 0.1692* PointDifferential
+ $$
+
+
+### Interpretation: Compare p-value with alpha = 0.05 ###
+
+```{r}
+#Fail to reject the null hypothesis: We do not have enough evidence to conclude that Badger football scoring differential is associated with percent change in Wisconsin per-capita income (p-value = 0.1395, two-tailed test).
+```
+
+Since the p-value (0.1395) > 0.05, we fail to reject the null hypothesis at the 5% significance level. There is not enough evidence to conclude that the slope $\beta_1$ is different from zero — that is, we cannot conclude that scoring differential is associated with percent income change.
+
+
+### Confidence Interval ###
+```{r}
+#95% Confidence Interval: (-0.06068496, 0.39899678)
+```
+The 95% confidence interval for the slope of the relationship between Badger football scoring differential and percent change in Wisconsin per-capita income is [-0.061, 0.399]. Since the interval includes 0, we cannot conclude that there is a statistically significant association between scoring differential and income change. In other words, based on this confidence interval, the effect of football performance on income change could plausibly be negative, zero, or positive.
+
+## Discussion ##
+
+### Further Interpretation ###
+The statistical results of our analysis suggest that there is not enough evidence to conclude a significant linear relationship between Wisconsin’s annual percentage change in real per-capita income and the Wisconsin Badgers’ football point differential. The p-value of 0.1395 is greater than the commonly used significance level of 0.05, meaning we fail to reject the null hypothesis that the true slope is zero. 
+
+For non-statistical readers, the p-value represents the probability of observing a relationship this strong (or stronger) if in reality no relationship exists between football performance and income change. A p-value of 0.1395 indicates that such a result is not particularly unusual under the assumption of no relationship. Additionally, the 95% confidence interval for the slope, (–0.06068, 0.39899), includes 0, which is consistent with the hypothesis test and reinforces the conclusion that the true effect of point differential on income growth may be zero.
+
+While the sample correlation coefficient (r = 0.342) suggests a moderate positive trend visually, this trend is not statistically strong enough to conclude that a meaningful predictive relationship exists. Overall, both the p-value and the confidence interval indicate that the fluctuations in Badger football performance do not provide reliable information about changes in real income growth in Wisconsin.
+
+### Shortcomings of the Analysis ##
+**Time Span:** Our analysis uses only a 20-year dataset (2003–2022). While this is sufficient for regression, the relatively small sample size reduces statistical power and makes it harder to detect subtle relationships. A longer time series could reveal whether any trends persist or are simply short-term fluctuations.
+
+**Economic Conditions:** Major economic events such as the 2008 recession and the pandemic likely influenced Wisconsin’s annual real income growth. These external shocks may violate the assumption that the relationship between income change and football performance is independent across years.
+
+**Unaccounted Variables:**
+Our model includes only Badger point differential and income change, and does not include key economic drivers such as employment, inflation, and policy changes. These missing variables likely play a much larger role in explaining income trends. Because of this, any relationship we observe should not be interpreted as causal. 
+
+**Independent Vs. Dependent Assumptions**
+This project made the assumption that the independent variable is the football scoring differential, and income is the dependent variable. However, one may find a stronger argument that it is the opposite: sports teams may see improvement when the economic conditions of their school and audience members improve because of a surplus in funding. This would also assume that ticket sales increase when teams perform better, which may not always be true. 
+
+
+### Additional Questions and Recommendations for Future Research ###
+
+While working on this project, I encountered a couple of questions that would be useful to analyze in future research:
+
+1. Does fan engagement or athletic department revenue correlate with economic trends?
+Future work could incorporate variables like ticket sales, merchandise revenue, or TV viewership. These might show whether broader economic conditions affect sports engagement or vice versa. We can test different types of regression models and expand past the assumption that the model is linear, like we did for this project. 
+
+2. Are certain types of games more predictive of economic trends? It may be interesting to examine whether high-stakes matches such as rivalry games or bowl games. Comparing economic trends to these segmented dates could give us a better idea of the correlation.
+
+
+
+
+
+
+
